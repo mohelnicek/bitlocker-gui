@@ -1,0 +1,129 @@
+<html>
+<head>
+<title>Bitlocker GUI</title>
+<HTA:APPLICATION ID="app" 
+    APPLICATIONNAME="Bitlocker GUI"
+    SCROLL="auto"
+    SINGLEINSTANCE="yes"
+    BORDER="thin"
+    INNERBORDER="no"
+    CONTEXTMENU="yes"
+    SELECTION="yes"
+    WINDOWSTATE="normal"
+    CAPTION="yes"
+    MINIMIZEBUTTON="yes"
+    MAXIMIZEBUTTON="yes"
+    SHOWINTASKBAR="yes"
+    SYSMENU="yes"
+    VERSION="1.0"
+>
+<style>
+    table {
+        margin: 0;
+    }
+    div {
+        margin: 10;
+    }
+    body {
+        font-family: monospace;
+        font-weight: bold;
+    }
+    td {
+        vertical-align: bottom;
+        font-weight: bold;
+    }
+    span.header {
+        font-size: 1.5em;
+        padding-right: 10;
+    }
+    span.info {
+        font-weight: bold;
+    }
+    span.success {
+        color: green;
+        font-weight: bold;
+    }
+    span.error {
+        color: red;
+        font-weight: bold;
+    }
+    hr {
+        color: #eeeeee;
+    }
+    input.pass {
+        width: 450;
+    }
+    input.unlock {
+        margin-left: 10;
+    }
+</style>
+<script language=vbs>
+    sub initialize()
+        On Error Resume Next
+        Dim wmi, drive, results
+
+        Set wmi = GetObject("WINMGMTS:{impersonationLevel=impersonate}!\\.\ROOT\CIMV2\Security\MicrosoftVolumeEncryption")
+        Set results = wmi.ExecQuery("Select * from Win32_EncryptableVolume")
+        
+        main.innerHtml = ""
+        for each drive in results
+            main.innerHtml = main.innerHtml + generate(Replace(drive.DriveLetter, ":", ""), drive.ProtectionStatus)
+        next
+    end sub
+
+    function generate(char, level)
+
+        select case level
+            case 0  ' unencrypted
+                generate = "<span class=header>" & char & ":</span><span class=info> unencrypted</span><hr />"
+            case 1  ' unlocked
+                generate = "<span class=header>" & char & ":</span><span class=success> unlocked</span><hr />"
+            case 2  ' locked or damaged
+                generate =  "<table><tr>" & _
+                                "<td><span class=header>" & char & ":</span></td>" & _
+                                "<td>" & _
+                                    "Recovery password:<br /> <input type=text class=pass id=pass" & char & ">" & _
+                                "</td><td>" & _
+                                    "<input type=button value=Unlock class=unlock id=" & char & " onclick='unlock'>" & _
+                                "</td>" & _
+                            "</tr></table><div id=help" & char & "></div><hr />"
+        end select
+    end function
+
+    sub unlock()
+        Dim char, drive, recPass, command, errlevel
+        char = window.event.srcelement.id
+        drive = char + ":"
+        recPass = document.getElementById("pass" & char).value
+
+        command = "manage-bde -unlock " & drive & " -RecoveryPassword " & recPass
+
+        Set wmi = GetObject("WINMGMTS:{impersonationLevel=impersonate}!\\.\ROOT\CIMV2\Security\MicrosoftVolumeEncryption")
+        Set results = wmi.ExecQuery("Select * from Win32_EncryptableVolume")
+
+        for each drive in results
+            if drive.DriveLetter = char & ":" then
+                errlevel = drive.UnlockWithNumericalPassword(recPass)
+                if errlevel = 0 then
+                    Call setHelp(char, "Unlocked", "success")
+                else
+                    Call setHelp(char, "Error " & errlevel & "! Alternatively try command " & command , "error")
+                end if
+            end if
+        next
+    end sub
+
+    function setHelp(char, text, className)
+        document.getElementById("help" & char).innerHtml = "<span class=" & className & ">" & text & "</span>"
+    end function
+
+</script>
+
+</head>
+<body>
+    <div id=main>Program has to be run with elevated permissions.</div>
+    <script language=vbs>
+        Call initialize
+    </script>
+</body>
+</html>
